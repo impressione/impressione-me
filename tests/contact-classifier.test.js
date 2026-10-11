@@ -124,7 +124,7 @@ describe("contact classifier (clef-flash)", () => {
     assert.equal(res.type, "real_contact");
   });
 
-  it("sends 2 calls: full state for tipo, message-only for idioma", async () => {
+  it("sends 2 calls: message-only state for tipo and idioma", async () => {
     const calls = [];
     const ai = {
       run: async (model, input) => {
@@ -136,10 +136,10 @@ describe("contact classifier (clef-flash)", () => {
     const res = await classifyContact(ai, submission);
     assert.equal(calls.length, 2);
     assert.equal(calls[0][0], "@cf/cloudflare/clef-flash");
-    assert.deepEqual(calls[0][1].state, { name: "N", company: "C", interest: "Arquitetura e reestruturação técnica", message: "M" });
+    assert.equal(calls[0][1].state, "M");
     assert.equal(calls[0][1].questions.tipo.type, "choice");
     assert.deepEqual(Object.keys(calls[0][1].questions.tipo.criteria).sort(), [...CONTACT_TYPES].sort());
-    assert.deepEqual(calls[1][1].state, { message: "M" });
+    assert.equal(calls[1][1].state, "M");
     assert.deepEqual(Object.keys(calls[1][1].questions), ["idioma"]);
     assert.equal(res.type, "spam");
   });

@@ -58,18 +58,14 @@ function bestOption(answer, types = CONTACT_TYPES) {
 
 export async function classifyContact(ai, submission) {
   try {
-    // Duas chamadas independentes (paralelas): o idioma avalia SÓ `message`
-    // — name/company e principalmente `interest` (select sempre em PT)
-    // viciariam a detecção para português.
+    // Avalia SÓ `message`, passada direto como string (state).
+    // name/company e principalmente `interest` (select sempre em PT)
+    // viciavam tipo e idioma — ex.: interesse PT empurrava idioma p/ PT.
+    const message = typeof submission?.message === "string" ? submission.message : "";
     const [tipoRes, idiomaRes] = await Promise.all([
       ai.run(CLASSIFIER_MODEL, {
         model: CLASSIFIER_MODEL_ID,
-        state: {
-          name: submission.name,
-          company: submission.company,
-          interest: submission.interest,
-          message: submission.message,
-        },
+        state: message,
         questions: {
           tipo: {
             type: "choice",
@@ -85,7 +81,7 @@ export async function classifyContact(ai, submission) {
       }),
       ai.run(CLASSIFIER_MODEL, {
         model: CLASSIFIER_MODEL_ID,
-        state: { message: submission.message },
+        state: message,
         questions: {
           idioma: {
             type: "choice",
