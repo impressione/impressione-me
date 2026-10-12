@@ -4,6 +4,15 @@ function normalize(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+export function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 export function buildEmailBody(fields) {
   const lines = [
     "Novo contato pelo formulario de impressione.me",
@@ -20,6 +29,29 @@ export function buildEmailBody(fields) {
   ];
 
   return lines.join("\n");
+}
+
+export function buildEmailHtml(fields) {
+  const row = (label, value) =>
+    `<tr><td style="padding:6px 12px 6px 0;color:#666;white-space:nowrap;vertical-align:top;">${label}</td><td style="padding:6px 0;vertical-align:top;">${escapeHtml(value || "-")}</td></tr>`;
+  const message = escapeHtml(fields.message || "-").replaceAll("\n", "<br>");
+
+  return [
+    `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;color:#222;">`,
+    `<h2 style="margin:0 0 4px;">Novo contato pelo formulário de impressione.me</h2>`,
+    `<table style="border-collapse:collapse;margin:12px 0;">`,
+    row("Email", fields.email),
+    row("Nome", fields.name),
+    row("Empresa", fields.company),
+    row("Interesse", fields.interest),
+    row("Enviado em", fields.submittedAt),
+    row("Origem", fields.source),
+    `</table>`,
+    `<p style="margin:12px 0 4px;color:#666;">Mensagem:</p>`,
+    `<div style="background:#f6f6f6;border:1px solid #e2e2e2;border-radius:6px;padding:12px;">${message}</div>`,
+    `<p style="margin:12px 0 0;"><a href="mailto:${escapeHtml(fields.email)}">Responder ao visitante</a></p>`,
+    `</div>`,
+  ].join("");
 }
 
 export function sanitizeSubmission(body) {
@@ -40,6 +72,7 @@ export async function sendNewContactEmail(env, contact, subject) {
     to: env.TEAM_EMAIL,
     subject: subject ?? `Novo contato de ${contact.email}`,
     text: buildEmailBody(contact),
+    html: buildEmailHtml(contact),
     replyTo: contact.email,
   });
 }

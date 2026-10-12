@@ -35,13 +35,14 @@ async function handleScheduled(env) {
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { counts, items } = await queryPendingReview(env.DB, since);
-  const { subject, text } = buildDailySummaryEmail({ day, counts, items });
+  const { subject, text, html } = buildDailySummaryEmail({ day, counts, items });
 
   await env.EMAIL.send({
     from: env.FROM_EMAIL,
     to: env.TEAM_EMAIL,
     subject,
     text,
+    html,
     replyTo: env.FROM_EMAIL,
   });
 
