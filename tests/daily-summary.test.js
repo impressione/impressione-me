@@ -20,12 +20,12 @@ function fakeDb({ counts, items }) {
 
 describe("daily summary", () => {
   it("builds subject + body with counts and items", () => {
-    const { subject, text } = buildDailySummaryEmail({
+    const { subject, text, html } = buildDailySummaryEmail({
       day: "2026-10-10",
       counts: { spam: 2, phishing_scam: 1, suspicious_language: 1, unclassified: 1 },
       items: [
         {
-          submittedAt: "t", email: "a@b.com", name: "A",
+          submittedAt: "t", email: "a@b.com", name: "<A>",
           classification: "phishing_scam", confidence: 0.93,
           reason: "", excerpt: "conta bloqueada",
         },
@@ -36,6 +36,10 @@ describe("daily summary", () => {
     assert.match(subject, /1 idioma/);
     assert.match(text, /a@b\.com/);
     assert.match(text, /conta bloqueada/);
+    assert.ok(html.includes("<table"));
+    assert.ok(html.includes("mailto:a@b.com"));
+    assert.ok(!html.includes("<A>"));
+    assert.ok(html.includes("&lt;A&gt;"));
   });
 
   it("empty day -> heartbeat body, real contacts excluded by query", async () => {
