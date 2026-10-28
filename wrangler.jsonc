@@ -58,34 +58,5 @@
     {
       "name": "EMAIL"
     }
-  ],
-  "preview_urls": true,
-  "previews": {
-    "vars": {
-      "FROM_EMAIL": "contato@impressione.me",
-      "TEAM_EMAIL": "contato@impressione.me"
-    },
-    "d1_databases": [
-      {
-        "binding": "DB",
-        "database_id": "PASTE_PREVIEW_DB_ID_AFTER_CREATE"
-      }
-    ],
-    "send_email": [
-      {
-        "name": "EMAIL"
-      }
-    ],
-    "queues": {
-      "producers": [
-        {
-          "binding": "CONTACT_QUEUE",
-          "queue": "impressione-me-contact-preview"
-        }
-      ]
-    },
-    "ai": {
-      "binding": "AI"
-    }
-  }
+  ]
 }
