@@ -32,8 +32,7 @@
   },
   "vars": {
     "FROM_EMAIL": "contato@impressione.me",
-    "TEAM_EMAIL": "contato@impressione.me",
-    "REPLY_FROM_EMAIL": "respostas@impressione.me"
+    "TEAM_EMAIL": "contato@impressione.me"
   },
   "d1_databases": [
     {
