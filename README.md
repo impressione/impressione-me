@@ -2,13 +2,18 @@
 
 Site institucional da Impressione (`https://impressione.me`): Astro estático
 servido por um Cloudflare Worker, com formulário de contato que salva em D1,
-classifica com AI (clef-flash) e notifica o time — resumo diário do resto.
+classifica com AI (clef-flash), responde automaticamente os contatos reais e
+notifica o time — resumo diário do resto.
 
 ```
-Browser --POST /api/contact--> Worker (fetch) --> Fila --> Workflow: D1 -> clef -> email
-                                  |                                              ^
-                                  +---- assets ./dist (site) --------------------+
-Cron 12:00 UTC --> Worker (scheduled) --> resumo diário --> E-mail
+Browser --POST /api/contact--> Worker (fetch) --> Fila --> Workflow
+                                                          |  histórico por email (D1)
+                                                          |  clef-flash (classifica)
+                                                          |  LLM -> Resend -> visitante
+                                                          +-> e-mail ao time (send_email)
+                                  |
+                                  +---- assets ./dist (site)
+Cron 12:00 UTC --> Worker (scheduled) --> resumo diário (só se houver contato) --> E-mail
 ```
 
 ## Pré-requisitos
@@ -41,9 +46,13 @@ src/pages/           Páginas Astro (index, contato, contato/obrigado, contato/f
 public/              Arquivos estáticos (+ .assetsignore do Worker)
 workers/app/         Worker único: index.js (fetch + queue fino + scheduled),
                      contact-producer.js (form -> fila),
-                     contact-consumer.js (dedupe -> workflow),
+                     contact-consumer.js (dedupe -> workflow + e-mails ao time),
                      contact-classifier.js (clef-flash),
-                     contact-workflow.js (D1 -> classifica -> roteia),
+                     contact-history.js (histórico agrupado por email),
+                     auto-reply.js (decisão de tom + LLM + template),
+                     contact-replies.js (persistência das respostas),
+                     resend.js (envio ao visitante),
+                     contact-workflow.js (D1 -> classifica -> responde -> roteia),
                      daily-summary.js (resumo), migrations/, wrangler.jsonc
 tests/               Testes unitários + fixtures do golden set
 dist/                Build (gerado, gitignored)
@@ -57,13 +66,31 @@ dist/                Build (gerado, gitignored)
    no primeiro deploy) → `303 /contato/obrigado` (falha → `/contato/falha`;
    honeypot finge sucesso sem enfileirar).
 3. Consumer salva no D1 (`INSERT OR IGNORE`) e dispara 1 `ContactWorkflow`.
-4. Workflow classifica com clef-flash em 2 perguntas: `tipo` (`real_contact` |
-   `phishing_scam` | `spam`, com preempção phishing > spam) e
-   `idioma` (PT | EN | outro — conteúdo real em outro idioma vira
-   `suspicious_language`). Erro ou confiança < 0.6 → `unclassified`,
-   sem e-mail.
-5. `real_contact` → e-mail imediato. Demais → resumo diário (cron 12:00 UTC
-   = 09h BRT) com contagens + top 20.
+4. Workflow carrega o histórico do email (agrupado por `LOWER(email)`, apenas
+   contatos anteriores) e classifica com clef-flash em 2 perguntas: `tipo`
+   (`real_contact` | `phishing_scam` | `spam`, com preempção phishing > spam)
+   e `idioma` (PT | EN | outro — conteúdo real em outro idioma vira
+   `suspicious_language`). Erro ou confiança < 0.6 → `unclassified`.
+5. `real_contact` → gera resposta com Workers AI (llama-4-scout, fallback
+   qwen3.8-27b e glm-4.7-flash), envia ao visitante via Resend e notifica o
+   time com o texto da resposta. Se a geração falhar, nada é enviado e o time
+   recebe o contato marcado para resposta manual.
+6. Demais classes → resumo diário (cron 12:00 UTC = 09h BRT) com contagens +
+   top 20. O resumo também lista os contatos reais com a resposta automática
+   enviada e **não é enviado quando não há nenhum contato na janela**.
+
+## Resposta automática
+
+- O email é a chave do histórico: `contacts` + índice em `LOWER(email)`.
+  `contact_replies` guarda 1 linha por contato (`UNIQUE(contact_id)`), então
+  retry/replay do workflow nunca responde duas vezes.
+- O tom muda conforme o tempo desde a última interação real: primeiro contato,
+  retomada em < 24h, alguns dias ou mais de uma semana. Sempre responde.
+- Prompt trata a mensagem do visitante como dado (anti prompt-injection), sem
+  preço/prazo/links, e a assinatura + aviso de resposta automática são
+  adicionados fora da LLM.
+- Envio ao visitante usa **Resend** (free tier). O binding `send_email` da
+  Cloudflare continua só para o e-mail ao time (destinatário verificado).
 
 ## Deploy
 
@@ -73,23 +100,22 @@ Automático via **Workers Builds** (1 projeto `impressione-me` ligado ao repo):
 |---|---|---|
 | `/` (raiz) | `npm run build` | `npx wrangler deploy` |
 
-Preview por PR ativo (`preview_urls: true`). Manual: `npm run deploy`.
+Preview por PR desativado (sem bloco `previews`/`preview_urls` no
+`wrangler.jsonc`: o D1 e a fila de preview não são auto-provisionados e o
+deploy do PR falhava). Manual: `npm run deploy`.
 O schema do D1 é garantido em runtime pelo próprio Worker (`db.js`, a partir
 do mesmo DDL versionado em `workers/app/migrations/`) — dispensa `migrate`
-no deploy. `npm run db:migrate` continua disponível para uso manual/preview.
+no deploy. `npm run db:migrate` continua disponível para uso manual.
 Setup uma vez, fora do deploy:
 1. Nada para o D1 de produção: o primeiro deploy auto-provisiona o banco
-   `impressione-me-db` a partir do binding; o DDL entra pelo `db:migrate`
-   do Build command acima.
-2. Preview isolado é obrigatório (o `wrangler preview` não auto-provisiona):
-   `wrangler d1 create impressione-contacts-preview` e
-   `wrangler queues create impressione-me-contact-preview` → colar os ids
-   no bloco `previews` do `wrangler.jsonc`; depois
-   `wrangler d1 migrations apply impressione-contacts-preview --remote`.
-   Sem isso o preview falha em `10021`. (Produção não precisa: o deploy
-   cria o banco sozinho.)
+   `impressione-me-db` a partir do binding; o schema entra pelo `ensureSchema`
+   no primeiro contato/cron (ou por `npm run db:migrate` manual).
+2. Resend: verificar o domínio `impressione.me` (DKIM/SPF) e cadastrar o
+   secret `wrangler secret put RESEND_API_KEY`. Local: `.dev.vars` (ignorado
+   pelo git) com `RESEND_API_KEY=re_...`. Sem a chave, a resposta automática
+   falha de forma controlada e o contato cai no resumo diário.
 3. Custom Domains `impressione.me` + `www` no Worker (Terraform, repo infra).
-4. Checar plano do clef-flash: 1 chamada em preview; `403`/erro `5035`
+4. Checar plano do clef-flash: 1 chamada em produção; `403`/erro `5035`
    significa que exige Workers Paid ($5/mês).
 
 ## Relação com o repo de infra

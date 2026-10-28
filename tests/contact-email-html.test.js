@@ -51,4 +51,45 @@ describe("contact email html", () => {
     assert.ok(sent[0].text.includes("Email: a@b.com"));
     assert.equal(sent[0].replyTo, "a@b.com");
   });
+
+  it("includes the automatic reply in the team notification", () => {
+    const reply = {
+      status: "sent",
+      model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+      subject: "Re: contato",
+      body: "Oi Ada, obrigado pelo contato.",
+      is_returning: 1,
+      previous_contacts: 2,
+      last_contact_at: "2026-10-01T10:00:00.000Z",
+    };
+    const text = buildEmailBody(contact, { reply });
+    assert.match(text, /Resposta automatica/);
+    assert.match(text, /Status: sent/);
+    assert.match(text, /Oi Ada, obrigado pelo contato\./);
+    assert.match(text, /Contato recorrente: 2/);
+
+    const html = buildEmailHtml(contact, { reply });
+    assert.ok(html.includes("Resposta automática"));
+    assert.ok(html.includes("Oi Ada, obrigado pelo contato."));
+    assert.ok(html.includes("recorrente (2 anterior"));
+  });
+
+  it("highlights a failed automatic reply for manual follow-up", () => {
+    const reply = {
+      status: "failed",
+      model: null,
+      body: null,
+      reason: "reply-generation-failed",
+      error: "llama: 429",
+      is_returning: 0,
+    };
+    const text = buildEmailBody(contact, { reply });
+    assert.match(text, /Status: failed/);
+    assert.match(text, /llama: 429/);
+    assert.match(text, /responder manualmente/i);
+
+    const html = buildEmailHtml(contact, { reply });
+    assert.ok(html.includes("Responder manualmente."));
+    assert.ok(html.includes("llama: 429"));
+  });
 });
